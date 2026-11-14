@@ -116,6 +116,16 @@
               "window_drag": true
             },
             {
+              "id": "panel-buttons",
+              "type": "block",
+              "content": {
+                "mod": "panel-buttons"
+              },
+              "size": {
+                "px": 236
+              }
+            },
+            {
               "id": "skillshare-toggle",
               "type": "block",
               "content": {
@@ -184,6 +194,27 @@
                       "content": {
                         "mod": "changes"
                       }
+                    },
+                    {
+                      "id": "devservers",
+                      "type": "block",
+                      "content": {
+                        "mod": "devservers"
+                      }
+                    },
+                    {
+                      "id": "project-notes",
+                      "type": "block",
+                      "content": {
+                        "mod": "project-notes"
+                      }
+                    },
+                    {
+                      "id": "machines",
+                      "type": "block",
+                      "content": {
+                        "mod": "machines"
+                      }
                     }
                   ],
                   "active": "files"
@@ -229,7 +260,18 @@
           }
         }
       ],
-      "resizable": false
+      "resizable": false,
+      "floating": [
+        {
+          "id": "attention",
+          "content": {
+            "mod": "attention"
+          },
+          "edge": "right",
+          "align": "end",
+          "peek": 40
+        }
+      ]
     }
   ],
   "background": "canvas",

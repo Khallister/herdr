@@ -6,7 +6,10 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { spaces, panes, run, exec, theme, home, appHome, layout, readTextFile, writeTextFile, pickFolder, props } from "herdr";
+import { spaces, panes, run, exec, theme, home, appHome, layout, readTextFile, writeTextFile, pickFolder, props, shared, setShared, openOverlay, closeOverlay, notify, nextCommand } from "herdr";
+import { RECIPE_FILE, TEMPLATE, readRecipe, launch } from "./launch.js";
+
+const REQUEST = "projects.request";
 
 const REFRESH = 30000;
 const configPath = () => `${appHome()}/mods/projects/config.json`;
@@ -65,17 +68,63 @@ function Switch(t) {
     .children(kids.map((k) => pill(k.id)));
 }
 
+// The right-click menu (a popup copy of this mod). It hands its pick to the list through shared
+// state, since a popup's tasks end when it closes.
+function Menu(t) {
+  const { dir, open, recipe, overlay } = props();
+  const pick = (action) => () => {
+    setShared(REQUEST, { dir, action, n: Date.now() });
+    closeOverlay(overlay);
+  };
+  const item = (id, label, hint, action) =>
+    h_flex().id(`menu-${id}`).h(28).px(10).gap(8).items_center().rounded(6).cursor_pointer()
+      .hover((s) => s.bg(t.hover)).on_click(pick(action))
+      .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(label))
+      .when(Boolean(hint), (el) => el.child(div().text_size(11).text_color(t.dim).child(hint)));
+  const line = () => div().h(1).my(4).mx(6).bg(t.border);
+  return v_flex().size_full().p(4).text_size(12.5).bg(t.popover)
+    .child(div().px(10).py(4).text_size(11).text_color(t.dim).truncate().child(base(dir ?? "")))
+    .when(open > 0, (el) => el.child(item("go", "Go to its space", open > 1 ? `${open}` : "", "open")))
+    .child(item("recipe", recipe ? "New space from recipe" : "New space", recipe ? RECIPE_FILE : "", recipe ? "recipe" : "plain"))
+    .when(recipe, (el) => el.child(item("plain", "New space, plain terminal", "", "plain")))
+    .child(item("claude", "New space with Claude Code", "", "claude"))
+    .child(item("codex", "New space with Codex", "", "codex"))
+    .child(line())
+    .child(item("edit", recipe ? "Edit launch recipe" : "Create launch recipe", "nvim", "edit"))
+    .child(item("finder", "Reveal in Finder", "", "finder"))
+    .child(item("copy", "Copy path", "", "copy"));
+}
+
 export default class Projects extends View {
   init(_props, cx) {
-    if (props()?.role === "switch") return;
+    if (props()?.role === "switch" || props()?.role === "menu") return;
     this.root = null;
     this.dirs = [];
+    this.recipes = new Set();
+    this.defaultRecipe = null;
+    this.busy = null;
+    this.handled = shared(REQUEST)?.n ?? 0;
     this.error = null;
     this.filter = "";
     this.input = InputState.new({ placeholder: "Filter projects…" });
     this.input.on("change", (_e, cx) => { this.filter = this.input.value(); cx.notify(); });
     this.reload(cx);
     cx.timer.every(REFRESH, (cx) => this.reload(cx));
+    // Key commands: projects.refresh, projects.filter (focus the filter box), projects.open:<folder name>.
+    cx.spawn(async (cx) => {
+      for (;;) {
+        const c = String(await nextCommand());
+        if (c === "refresh") this.reload(cx);
+        else if (c === "filter") this.input.focus();
+        else if (c.startsWith("open:") || c.startsWith("menu:")) {
+          const name = c.slice(5), dir = this.dirs.find((d) => base(d) === name);
+          if (!dir) notify({ title: `No project ${name}`, level: "error" });
+          else if (c.startsWith("open:")) this.handle({ dir, action: "open" }, cx);
+          else this.menu(dir, spacesByProject([dir], spaces(), panes())[dir] ?? []);
+        }
+        cx.notify();
+      }
+    });
   }
 
   reload(cx) {
@@ -87,6 +136,9 @@ export default class Projects extends View {
         const r = await exec("find", ["-L", this.root, "-mindepth", "1", "-maxdepth", "1", "-type", "d", "-not", "-name", ".*"]);
         if (r.code !== 0 && !r.stdout.trim()) throw new Error(r.stderr.trim() || `can't read ${this.root}`);
         this.dirs = r.stdout.split("\n").filter(Boolean).sort((a, b) => (base(a).toLowerCase() < base(b).toLowerCase() ? -1 : 1));
+        this.defaultRecipe = cfg.defaultRecipe ?? null;
+        const rc = await exec("find", ["-L", this.root, "-mindepth", "2", "-maxdepth", "2", "-name", RECIPE_FILE]);
+        this.recipes = new Set(rc.stdout.split("\n").filter(Boolean).map((f) => f.slice(0, -RECIPE_FILE.length - 1)));
         this.error = null;
       } catch (e) {
         this.error = String(e?.message ?? e);
@@ -109,13 +161,67 @@ export default class Projects extends View {
     });
   }
 
-  open(dir, open, argv) {
+  // Click: the space already there, else the project's recipe (or config's defaultRecipe), else
+  // a plain terminal. argv: a new space running it; "plain": a new plain space.
+  open(dir, open, argv, cx) {
     if (!argv && open.length) {
       const pick = open.find((s) => s.active) ?? open[0];
       run("space.select", { id: pick.id });
+    } else if (argv && argv !== "plain") {
+      run("space.new", { folder: dir, argv });
+    } else if (argv === "plain" || !cx) {
+      run("space.new", { folder: dir });
     } else {
-      run("space.new", { folder: dir, ...(argv ? { argv } : {}) });
+      this.launchRecipe(dir, cx);
     }
+  }
+
+  launchRecipe(dir, cx) {
+    if (this.busy) return;
+    this.busy = dir;
+    cx.notify();
+    cx.spawn(async (cx) => {
+      try {
+        const recipe = (await readRecipe(dir)) ?? this.defaultRecipe;
+        if (recipe) await launch(cx, dir, recipe);
+        else run("space.new", { folder: dir });
+      } catch (e) {
+        notify({ title: `Couldn't open ${base(dir)}`, body: String(e?.message ?? e), level: "error" });
+      }
+      this.busy = null;
+      cx.notify();
+    });
+  }
+
+  editRecipe(dir, cx) {
+    cx.spawn(async (cx) => {
+      const file = `${dir}/${RECIPE_FILE}`;
+      try {
+        if ((await readTextFile(file)) == null) await writeTextFile(file, JSON.stringify(TEMPLATE, null, 2) + "\n", null);
+        run("tab.new", { name: RECIPE_FILE, folder: dir, argv: ["nvim", file] });
+      } catch (e) {
+        notify({ title: `Couldn't edit ${RECIPE_FILE}`, body: String(e?.message ?? e), level: "error" });
+      }
+      this.reload(cx);
+    });
+  }
+
+  // A request from this mod's right-click menu (an overlay copy, whose tasks end when it closes).
+  handle(req, cx) {
+    const open = spacesByProject([req.dir], spaces(), panes())[req.dir] ?? [];
+    if (req.action === "open") this.open(req.dir, open, undefined, cx);
+    else if (req.action === "recipe") this.launchRecipe(req.dir, cx);
+    else if (req.action === "plain") this.open(req.dir, open, "plain", cx);
+    else if (req.action === "claude") this.open(req.dir, open, ["claude"], cx);
+    else if (req.action === "codex") this.open(req.dir, open, ["codex", "--no-daemon"], cx);
+    else if (req.action === "edit") this.editRecipe(req.dir, cx);
+    else if (req.action === "finder") exec("open", [req.dir]);
+    else if (req.action === "copy") exec("osascript", ["-e", `set the clipboard to ${JSON.stringify(req.dir)}`]);
+  }
+
+  menu(dir, open) {
+    openOverlay({ mod: "projects", kind: "popup", at: "pointer", width: 236, height: 292,
+      props: { role: "menu", dir, open: open.length, recipe: this.recipes.has(dir) } });
   }
 
   row(dir, open, t) {
@@ -125,16 +231,19 @@ export default class Projects extends View {
     return h_flex().id(`project-${name}`).h(28).flex_none().px(8).gap(8).items_center().rounded(8).cursor_pointer()
       .when(active, (el) => el.bg(t.selected))
       .when(!active, (el) => el.hover((s) => s.bg(t.hover)))
-      .on_click(() => this.open(dir, open))
+      .on_click((_e, cx) => this.open(dir, open, undefined, cx))
+      .on_mouse_down("right", () => this.menu(dir, open))
       .child(div().w(8).flex_none().text_size(10)
         .text_color(status ? t[status] ?? t.unknown : t.dim)
         .child(open.length ? "●" : ""))
       .child(div().flex_1().min_w(0).truncate().text_color(open.length ? t.foreground : t.muted).child(name))
+      .when(this.busy === dir, (el) => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).text_color(t.dim).spin(900)))
+      .when(this.recipes.has(dir), (el) => el.child(svg("mods/projects/spaces.svg").size(11).text_color(t.dim).opacity(0.7)))
       .when(open.length > 1, (el) => el.child(div().text_size(10.5).text_color(t.dim).child(`${open.length}`)))
       .child(div().id(`project-claude-${name}`).size(20).flex_none().flex().items_center().justify_center().rounded(5)
         .opacity(0.55).hover((s) => s.bg(t.raised).opacity(1))
         .tooltip("New space with Claude Code")
-        .on_click((_e, cx) => { cx.stop_propagation(); this.open(dir, open, ["claude"]); })
+        .on_click((_e, cx) => { cx.stop_propagation(); this.open(dir, open, ["claude"], cx); })
         .child(image("icons/claude.svg").size(13)));
   }
 
@@ -157,6 +266,12 @@ export default class Projects extends View {
   render(cx) {
     const t = theme();
     if (props()?.role === "switch") return Switch(t);
+    if (props()?.role === "menu") return Menu(t);
+    const req = shared(REQUEST);
+    if (req && req.n > this.handled) {
+      this.handled = req.n;
+      cx.timer.after(0, (cx) => this.handle(req, cx));
+    }
     if (narrow()) {
       const byDir = spacesByProject(this.dirs, spaces(), panes());
       return v_flex().size_full().min_h(0).bg(t.chrome).text_size(13).pt(6)
