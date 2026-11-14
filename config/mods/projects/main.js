@@ -38,20 +38,31 @@ export function spacesByProject(dirs, sp, ps) {
   return out;
 }
 
+// The sidebar's rail goes by its width, like the shipped Spaces list.
+const narrow = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
+const LABEL = { spaces: "Spaces", projects: "Projects" };
+const ICON = { spaces: "mods/projects/spaces.svg", projects: "mods/projects/folder.svg" };
+
 function Switch(t) {
   const stackId = props()?.stack ?? "sidebar-switch";
   const stack = find(layout(), stackId);
   const active = stack?.active ?? stack?.children?.[0]?.id;
-  const pill = (id, label) =>
-    h_flex().id(`switch-${id}`).h(24).px(10).items_center().rounded(6).text_size(11.5).cursor_pointer()
+  const rail = narrow();
+  const pill = (id) => {
+    const label = LABEL[id] ?? id;
+    return h_flex().id(`switch-${id}`).h(24).items_center().justify_center().rounded(6).text_size(11.5).cursor_pointer()
+      .when(rail, (el) => el.w(26).tooltip(label).child(svg(ICON[id] ?? ICON.projects).size(14)))
+      .when(!rail, (el) => el.px(10).child(label))
       .text_color(active === id ? t.foreground : t.dim)
       .when(active === id, (el) => el.bg(t.selected))
       .when(active !== id, (el) => el.hover((s) => s.bg(t.hover).text_color(t.foreground)))
-      .on_click(() => run("layout.select", { stack: stackId, child: id }))
-      .child(label);
+      .on_click(() => run("layout.select", { stack: stackId, child: id }));
+  };
   const kids = stack?.children ?? [];
-  return h_flex().size_full().bg(t.chrome).px(10).gap(4).items_center()
-    .children(kids.map((k) => pill(k.id, k.id === "projects" ? "Projects" : k.id === "spaces" ? "Spaces" : k.id)));
+  return h_flex().size_full().bg(t.chrome).gap(rail ? 2 : 4).items_center()
+    .when(rail, (el) => el.justify_center())
+    .when(!rail, (el) => el.px(10))
+    .children(kids.map((k) => pill(k.id)));
 }
 
 export default class Projects extends View {
@@ -127,9 +138,31 @@ export default class Projects extends View {
         .child(image("icons/claude.svg").size(13)));
   }
 
+  // The rail: one cell per project, its initial and a status dot; the name in a tooltip.
+  compact(dir, open, t) {
+    const status = open.map((s) => s.status).filter(Boolean).sort((a, b) => RANK[b] - RANK[a])[0] ?? null;
+    const active = open.some((s) => s.active);
+    const name = base(dir);
+    return h_flex().flex_none().justify_center().child(
+      h_flex().id(`project-${name}`).relative().w(32).h(26).rounded(6).justify_center().items_center().cursor_pointer()
+        .tooltip(name)
+        .when(active, (el) => el.bg(t.selected))
+        .when(!active, (el) => el.hover((s) => s.bg(t.hover)))
+        .on_click(() => this.open(dir, open))
+        .child(div().text_color(open.length ? t.foreground : t.muted).child([...name][0]?.toUpperCase() ?? "?"))
+        .when(open.length > 0, (el) => el.child(div().absolute().right(4).top(3).text_size(8)
+          .text_color(status ? t[status] ?? t.unknown : t.dim).child("●"))));
+  }
+
   render(cx) {
     const t = theme();
     if (props()?.role === "switch") return Switch(t);
+    if (narrow()) {
+      const byDir = spacesByProject(this.dirs, spaces(), panes());
+      return v_flex().size_full().min_h(0).bg(t.chrome).text_size(13).pt(6)
+        .child(v_flex().flex_1().min_h(0).gap(2).pb(14).overflow_y_scrollbar()
+          .children(this.dirs.map((d) => this.compact(d, byDir[d] ?? [], t))));
+    }
     const q = this.filter.trim().toLowerCase();
     const dirs = q ? this.dirs.filter((d) => base(d).toLowerCase().includes(q)) : this.dirs;
     const byDir = spacesByProject(this.dirs, spaces(), panes());
