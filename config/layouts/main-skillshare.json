@@ -118,7 +118,7 @@
                 "mod": "panel-buttons"
               },
               "size": {
-                "px": 236
+                "px": 310
               }
             },
             {
@@ -182,17 +182,10 @@
                   "type": "stack",
                   "children": [
                     {
-                      "id": "files",
+                      "id": "filetree",
                       "type": "block",
                       "content": {
-                        "mod": "files"
-                      }
-                    },
-                    {
-                      "id": "changes",
-                      "type": "block",
-                      "content": {
-                        "mod": "changes"
+                        "mod": "filetree"
                       }
                     },
                     {
@@ -217,7 +210,7 @@
                       }
                     }
                   ],
-                  "active": "files"
+                  "active": "filetree"
                 }
               ],
               "size": {

@@ -9,6 +9,7 @@ import { h_flex } from "gpui-base";
 import { run, theme, layout, shared, setShared, props, nextCommand } from "herdr";
 
 const ITEMS = [
+  { id: "filetree", label: "Tree", icon: "mods/filetree/folder.svg" },
   { id: "devservers", label: "Dev", icon: "mods/panel-buttons/dev.svg" },
   { id: "project-notes", label: "Notes", icon: "mods/panel-buttons/notes.svg" },
   { id: "machines", label: "Machines", icon: "mods/panel-buttons/machines.svg" },
@@ -34,8 +35,11 @@ export default class PanelButtons extends View {
   init(_props, cx) {
     const ids = this.items().map((i) => i.id);
     const enabled = shared("workspace.panels") ?? ["files", "changes"];
+    // Built-in Files / Changes are replaced by filetree: keep them out of the tab bar.
+    const DISABLED = ["files", "changes"];
     const missing = ids.filter((id) => !enabled.includes(id));
-    if (missing.length) setShared("workspace.panels", [...enabled, ...missing]);
+    const kept = enabled.filter((id) => !DISABLED.includes(id));
+    if (missing.length || kept.length !== enabled.length) setShared("workspace.panels", [...kept, ...missing]);
     cx.spawn(async (cx) => {
       for (;;) {
         const c = String(await nextCommand());
