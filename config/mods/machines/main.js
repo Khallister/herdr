@@ -2,6 +2,7 @@
 // disk, uptime and its Docker containers, read over `exec(..., {on})` every 30 s while the window
 // is in front. A machine that needs a login offers it in a Herdr terminal (type the password
 // there); a reachable one offers a new space on it and `hc machine update`.
+// "SSH…" opens SSH Connections (add/test ssh hosts, register them here).
 // Commands (nextCommand): "refresh".
 
 import { View, div, svg } from "gpui-kit";
@@ -154,6 +155,8 @@ export default class Machines extends View {
     return v_flex().size_full().min_h(0).bg(t.chrome).text_size(13).text_color(t.foreground)
       .child(h_flex().h(31).flex_none().pl(16).pr(6).items_center().text_size(11.5).text_color(t.dim)
         .child(div().flex_1().child("Machines"))
+        .child(div().id("machines-ssh").h(22).px(7).flex().items_center().rounded(6).text_size(11)
+          .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(() => run("mod.open", { name: "ssh-connections" })).child("SSH…"))
         .child(div().id("machines-refresh").size(26).flex().items_center().justify_center().rounded(6)
           .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click((_e, cx) => this.refresh(cx)).child("↻")))
       .child(v_flex().flex_1().min_h(0).px(10).pb(14).gap(8).overflow_y_scrollbar()

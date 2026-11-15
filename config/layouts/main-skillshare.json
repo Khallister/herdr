@@ -28,16 +28,6 @@
             {
               "id": "sidebar-switch",
               "type": "stack",
-              "header": {
-                "content": {
-                  "mod": "projects",
-                  "props": {
-                    "role": "switch",
-                    "stack": "sidebar-switch"
-                  }
-                },
-                "height": 34
-              },
               "children": [
                 {
                   "id": "spaces",
@@ -55,6 +45,16 @@
                 }
               ],
               "active": "spaces",
+              "header": {
+                "content": {
+                  "mod": "projects",
+                  "props": {
+                    "role": "switch",
+                    "stack": "sidebar-switch"
+                  }
+                },
+                "height": 34
+              },
               "size": {
                 "weight": 1
               },
@@ -102,10 +102,6 @@
         {
           "id": "tabs-row",
           "type": "row",
-          "size": {
-            "px": 42
-          },
-          "resizable": false,
           "children": [
             {
               "id": "tabs",
@@ -138,7 +134,11 @@
                 "px": 118
               }
             }
-          ]
+          ],
+          "size": {
+            "px": 42
+          },
+          "resizable": false
         },
         {
           "id": "work-body",
@@ -252,10 +252,6 @@
         {
           "id": "status-row",
           "type": "row",
-          "size": {
-            "px": 28
-          },
-          "resizable": false,
           "children": [
             {
               "id": "status",
@@ -270,15 +266,19 @@
             {
               "id": "usage-limits",
               "type": "block",
-              "size": {
-                "weight": 2.2
-              },
-              "min": 130,
               "content": {
                 "mod": "usage-limits"
-              }
+              },
+              "size": {
+                "weight": 2.200000047683716
+              },
+              "min": 130
             }
-          ]
+          ],
+          "size": {
+            "px": 28
+          },
+          "resizable": false
         }
       ],
       "resizable": false,
